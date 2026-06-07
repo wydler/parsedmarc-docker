@@ -3,7 +3,7 @@ name: Tools - Renovate
 
 "on":
   schedule:
-    - cron: "0 6 * * *"  # jeden Tag um 06:00 Uhr
+    - cron: "0 5 * * 6"  # Jeden Samstag um 05:00 Uhr
   workflow_dispatch:
     inputs:
       logLevel:
