@@ -1,5 +1,5 @@
 # Reference image
-FROM nginx:1.31.1@sha256:5aca99593157f4ae539a5dec1092a0ad8762f8e2eb1789085a13a0f5622369f6
+FROM nginx:1.31.2@sha256:42f2d24ae18df9b5251d1cc45548085656d2335e9338fd150a24e415462d151f
 
 # Metadata
 LABEL maintainer="Daniel Wydler"
