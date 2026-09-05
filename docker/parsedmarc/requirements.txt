@@ -1,2 +1,2 @@
-parsedmarc==10.5.0
+parsedmarc[elastic,msgraph,gmail]==11.0.0
 psycopg[binary]>=3.1.0
