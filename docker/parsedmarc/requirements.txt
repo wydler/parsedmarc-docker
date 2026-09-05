@@ -1,2 +1,2 @@
-parsedmarc==10.4.3
+parsedmarc==11.0.0
 psycopg[binary]>=3.1.0
