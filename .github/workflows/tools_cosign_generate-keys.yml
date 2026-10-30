@@ -1,0 +1,185 @@
+---
+name: "Tools - Generate Cosign key pair"
+
+"on":
+  workflow_dispatch:
+
+env:
+  branch-name: "cosign-generate-keys"
+
+permissions:
+  contents: read
+
+jobs:
+  check-requires:
+    name: Check requirements
+    runs-on: ubuntu-slim
+
+    steps:
+      - name: Generate app token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510  # v3.3.0
+        id: generate-token
+        with:
+          client-id: "${{ secrets.gh_app_cos_id }}"
+          private-key: "${{ secrets.gh_app_cos_private_key }}"
+
+      - name: Checkout the current branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: "Check if keys exist and should be regenerated"
+        env:
+          GH_TOKEN: "${{ steps.generate-token.outputs.token }}"
+          COSIGN_OVERWRITE: "${{ vars.COSIGN_OVERWRITE }}"
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo 'Secret mit dem Namen "cosign_gh_token" im Repository nicht gefunden.'
+            exit 1
+          fi
+
+          if [[ "$COSIGN_OVERWRITE" == "0" ]]; then
+            if gh secret list | grep -q "COSIGN_PASSWORD" &&
+               gh secret list | grep -q "COSIGN_PRIVATE_KEY" &&
+               gh secret list | grep -q "COSIGN_PUBLIC_KEY"; then
+
+              echo "::error::Cosign Key Pair existiert bereits und wird nicht überschrieben. Da Variable COSIGN_OVERWRITE aktuell den Wert '0' hat."
+              exit 1
+            fi
+          fi
+
+
+  create-branch:
+    name: Create working branch
+    runs-on: ubuntu-slim
+
+    needs:
+      - check-requires
+
+    outputs:
+      name: ${{ steps.branch.outputs.name }}
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Generate app token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510  # v3.3.0
+        id: generate-token
+        with:
+          client-id: "${{ secrets.gh_app_cos_id }}"
+          private-key: "${{ secrets.gh_app_cos_private_key }}"
+
+      - name: Create branch name
+        id: branch
+        run: |
+           BRANCH="${{ env.branch-name }}/$(date +'%Y%m%d-%H%M')"
+           echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Create branch
+        uses: peterjgrainger/action-create-branch@4b81ce657e255acd677cc6c55c9c763654be3aef  # v4.0.0
+        env:
+          GITHUB_TOKEN: "${{ steps.generate-token.outputs.token }}"
+        with:
+          branch: "${{ steps.branch.outputs.name }}"
+
+
+  gen-keys:
+    name: "Generate Keys"
+    runs-on: ubuntu-latest
+    needs:
+      - check-requires
+      - create-branch
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Generate app token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510  # v3.3.0
+        id: generate-token
+        with:
+          client-id: "${{ secrets.gh_app_cos_id }}"
+          private-key: "${{ secrets.gh_app_cos_private_key }}"
+
+      - name: "Checkout new created branch"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: "${{ needs.create-branch.outputs.name }}"
+          fetch-depth: '0'
+
+      - name: "Install Cosign"
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+
+      - name: "Generate Key Pair and Password for Cosign"
+        env:
+          COSIGN_PASSWORD: "${{ secrets.COSIGN_PASSWORD }}"
+          GITHUB_TOKEN: "${{ steps.generate-token.outputs.token }}"
+        run: |
+          cosign generate-key-pair github://${{ github.repository }}
+
+      - name: "Set the variable 'COSIGN_OVERWRITE' to '0'."
+        run: |
+          gh variable set COSIGN_OVERWRITE --body "0"
+        env:
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+
+      - name: "Commit & Push changes"
+        uses: actions-js/push@968f4695ca558093eadb24ad83cc5891f47e0cdc  # v1.6
+        with:
+          branch: "${{ needs.create-branch.outputs.name }}"
+          github_token: "${{ steps.generate-token.outputs.token }}"
+          force: true
+
+      - name: "Create a pull request"
+        id: pullrequest
+        uses: devops-infra/action-pull-request@1d8aa3c4a6060a1410641f700f91353af65cc94b  # v1.4.0
+        with:
+          github_token: "${{ steps.generate-token.outputs.token }}"
+          source_branch: "${{ needs.create-branch.outputs.name }}"
+          target_branch: "${{ github.event.repository.default_branch }}"
+          title: "[Cosign] Add public key to repository"
+          body: "A new key pair for Cosign has been created. This pull request will add the public key to the repository."
+          label: "Cosign, dependencies"
+          create_missing_labels: "true"
+          assignee: "dwydler"
+
+
+  cleanup-on-failure:
+    name: "Cleanup on failure"
+    runs-on: ubuntu-slim
+    if: ${{ failure() || cancelled() }}
+
+    needs:
+      - create-branch
+      - gen-keys
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Generate app token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510  # v3.3.0
+        id: generate-token
+        with:
+          client-id: "${{ secrets.gh_app_cos_id }}"
+          private-key: "${{ secrets.gh_app_cos_private_key }}"
+
+      - name: Check if branch exists
+        id: check_branch
+        env:
+          GH_TOKEN: "${{ steps.generate-token.outputs.token }}"
+        run: |
+          BRANCH="${{ needs.create-branch.outputs.name }}"
+
+          if gh api "repos/${{ github.repository }}/git/ref/heads/${BRANCH}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Delete previously created branch
+        if: steps.check_branch.outputs.exists == 'true'
+        uses: dawidd6/action-delete-branch@d1efac9a6f7a9b408d4e8ff663a99c1fbac17b3f  # v3.1.0
+        with:
+          github_token: "${{ steps.generate-token.outputs.token }}"
+          branches: "${{ needs.create-branch.outputs.name }}"
