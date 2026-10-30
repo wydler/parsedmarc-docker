@@ -124,6 +124,58 @@ jobs:
           sbom: true
           provenance: mode=max
 
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+
+      - name: Show Cosign version
+        shell: bash
+        run: |
+          cosign version
+
+      - name: Sign docker image with a key
+        shell: bash
+        run: |
+          cosign sign \
+            --verbose \
+            --new-bundle-format=true \
+            --use-signing-config=false \
+            --yes \
+            --key env://COSIGN_PRIVATE_KEY ${{ env.REGISTRY }}/${{ steps.tags.outputs.docker }}@${{ steps.build.outputs.digest }}
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.cosign_private_key }}
+          COSIGN_PASSWORD: ${{ secrets.cosign_password }}
+
+      - name: Verify image signature
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          IMAGE="${{ env.REGISTRY }}/${{ steps.tags.outputs.docker }}@${{ steps.build.outputs.digest }}"
+
+          for i in {1..12}; do
+            echo "Verification attempt ${i}/12..."
+
+            if cosign verify \
+                --key cosign.pub \
+                --output text \
+                "${IMAGE}"; then
+              echo "Signature verified."
+
+              exit 0
+            fi
+
+            echo "Signature not yet available. Waiting 5 seconds..."
+            sleep 5
+          done
+
+          echo "ERROR: Signature could not be verified after 60 seconds."
+          exit 1
+
+      - name: Show Cosign artifact tree
+        shell: bash
+        run: |
+          cosign tree ${{ env.REGISTRY }}/${{ steps.tags.outputs.docker }}@${{ steps.build.outputs.digest }}
+
       - name: Promote image to latest
         if: github.event_name == 'release' && github.event.action == 'released' && github.event.release.prerelease == false && github.event.release.draft == false
         shell: bash
