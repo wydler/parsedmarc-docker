@@ -101,14 +101,14 @@ jobs:
           container_tag=$(basename ${{ github.ref_name }})
           echo $container_tag
 
-
-          if [ "${{ github.event.release.prerelease }}" = true ]; then
-            echo "docker=${{ env.REGISTRY_ACCOUNT }}/${{ env.REGISTRY_REPO }}-${{ matrix.image }}:$container_tag" >> $GITHUB_OUTPUT
-          elif [ ! -z "${{ github.event.release.tag_name }}" ]; then
-            echo "docker=${{ env.REGISTRY_ACCOUNT }}/${{ env.REGISTRY_REPO }}-${{ matrix.image }}:latest, ${{ env.REGISTRY_ACCOUNT }}/${{ env.REGISTRY_REPO }}-${{ matrix.image }}:${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+          if [ -n "${{ github.event.release.tag_name }}" ] && [ "${{ github.event.release.prerelease }}" != "true" ]; then
+            image_tag="${{ github.event.release.tag_name }}"
           else
-            echo "docker=${{ env.REGISTRY_ACCOUNT }}/${{ env.REGISTRY_REPO }}-${{ matrix.image }}:$container_tag" >> $GITHUB_OUTPUT
+            image_tag="$container_tag"
           fi
+
+          echo "docker=${{ env.REGISTRY_ACCOUNT }}/${{ env.REGISTRY_REPO }}-${{ matrix.image }}:${image_tag}" >> "$GITHUB_OUTPUT"
+          echo "docker_image_version=${image_tag}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
