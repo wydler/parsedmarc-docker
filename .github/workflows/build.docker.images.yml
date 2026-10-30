@@ -112,6 +112,7 @@ jobs:
 
       - name: Build and push
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        id: build        
         with:
           context: .
           file: ./docker/${{ matrix.dockerfile }}/Dockerfile
@@ -120,3 +121,15 @@ jobs:
           platforms: ${{ env.REGISTRY_PLATFORMS }}
           cache-from: type=registry,ref=${{ env.REGISTRY_ACCOUNT }}/${{ env.REGISTRY_REPO }}-${{ matrix.image }}:${{ env.REGISTRY_REPO_TAG_CACHE_NAME }}
           cache-to: type=registry,ref=${{ env.REGISTRY_ACCOUNT }}/${{ env.REGISTRY_REPO }}-${{ matrix.image }}:${{ env.REGISTRY_REPO_TAG_CACHE_NAME }},mode=max
+          sbom: true
+          provenance: mode=max
+
+      - name: Promote image to latest
+        if: github.event_name == 'release' && github.event.action == 'released' && github.event.release.prerelease == false && github.event.release.draft == false
+        shell: bash
+        run: |
+          # Create or update the "latest" tag to point to the newly released image version.
+          # This operation updates the manifest in the registry and preserves all platform variants.
+          docker buildx imagetools create \
+            -t "${{ env.REGISTRY_ACCOUNT }}/${{ env.REGISTRY_REPO }}-${{ matrix.image }}:latest" \
+            ${{ steps.tags.outputs.docker }}
