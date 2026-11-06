@@ -1,5 +1,5 @@
 # Reference image
-FROM wydler/logrotate:1.2.7@sha256:866fde446f481f736abcaa68ef029bf42cfa22203367629bb1b916af8972178a
+FROM wydler/logrotate:1.2.8@sha256:7497732ad226f000ba6f683bc3ad5dd900b7d22f23d730df6033888fcdf72211
 
 # Metadata
 LABEL maintainer="Daniel Wydler"
